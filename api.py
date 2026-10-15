@@ -1,5 +1,5 @@
 """
-Robust FastAPI web UI for the AI Companion.
+Robust FastAPI web UI for the Mingle and Tingle.
 
 - In-memory session store with automatic cleanup
 - Character selection
@@ -59,14 +59,14 @@ def get_or_create_graph(session_id: str, character_id: str, backend: str = "sqli
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("AI Companion API ready")
+    print("Mingle and Tingle API ready")
     print("Characters:", list_characters())
     yield
     print("Shutdown")
 
 
 app = FastAPI(
-    title="AI Companion",
+    title="Mingle and Tingle",
     description="Entertainment AI companions with personality + memory",
     version="0.3.0",
     lifespan=lifespan,
@@ -167,7 +167,7 @@ CHAT_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Companion</title>
+<title>Mingle and Tingle</title>
 <style>
 :root {
   --bg: #0f0f12; --panel: #1a1a22; --border: #2a2a35;
@@ -212,7 +212,7 @@ input:focus { border-color: var(--accent); }
 </head>
 <body>
 <header>
-  <h1>AI Companion</h1>
+  <h1>Mingle and Tingle</h1>
   <div style="display:flex;gap:0.5rem;align-items:center">
     <select id="backend" title="Memory backend">
       <option value="sqlite">SQLite</option>
