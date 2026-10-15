@@ -7,5 +7,5 @@ numpy>=1.26
 scipy>=1.11
 chromadb>=0.5
 # optional:
-# openai>=1.0
+openai>=1.0
 # stripe>=10.0
