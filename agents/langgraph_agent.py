@@ -1,5 +1,5 @@
 """
-LangGraph StateGraph implementation of Chaterbait.
+LangGraph StateGraph implementation of Mingle and Tingle.
 
 Enhanced flow:
   START → retrieve_memories → generate_response → route
