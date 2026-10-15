@@ -1,4 +1,4 @@
-# Deploy the AI Companion
+# Deploy the Mingle and Tingle
 
 ## Quick options
 
@@ -18,7 +18,7 @@
 
 ### 3. Docker (any VPS / Fly.io / Cloud Run)
 ```bash
-docker build -t ai-companion .
+docker build -t mingle-and-tingle .
 docker run -p 8000:8000 -e OPENAI_API_KEY=sk-... ai-companion
 ```
 
