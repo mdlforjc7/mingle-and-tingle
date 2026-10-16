@@ -16,7 +16,7 @@ from typing import Dict, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import os
@@ -133,6 +133,30 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
+# ---------------------------------------------------------------------------
+# Character art: portraits + backgrounds served from ./img (no new dependencies)
+# ---------------------------------------------------------------------------
+_IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img")
+_IMG_CACHE: Dict[str, bytes] = {}
+if os.path.isdir(_IMG_DIR):
+    for _fname in os.listdir(_IMG_DIR):
+        if _fname.endswith(".webp"):
+            with open(os.path.join(_IMG_DIR, _fname), "rb") as _f:
+                _IMG_CACHE[_fname] = _f.read()
+
+
+@app.get("/img/{name}")
+def serve_img(name: str):
+    data = _IMG_CACHE.get(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(
+        content=data,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/api/characters")
 def api_list_characters():
     out = []
@@ -144,6 +168,8 @@ def api_list_characters():
             "gender": c.get("gender", ""),
             "age": c.get("age", 0),
             "role": c.get("role", ""),
+            "portrait": f"/img/{c['id']}.webp",
+            "background": f"/img/{c['id']}-bg.webp",
         })
     return out
 
@@ -263,9 +289,19 @@ input[type="text"] {
   padding: 0.75rem 1rem; color: var(--text); font-size: 0.95rem; outline: none;
 }
 input:focus { border-color: var(--accent); }
+#bg { position: fixed; inset: 0; background-size: cover; background-position: center;
+  opacity: 0.22; pointer-events: none; z-index: 0; }
+header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
+#charbar { width: 100%; max-width: 720px; padding: 0.25rem 1rem 0.75rem;
+  display: flex; align-items: center; gap: 0.75rem; }
+#portrait { width: 60px; height: 60px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--accent); background: var(--panel); flex: none; }
+#charbar .nm { font-weight: 600; color: var(--accent); font-size: 1rem; }
+#charbar .rl { font-size: 0.8rem; color: var(--muted); }
 </style>
 </head>
 <body>
+<div id="bg"></div>
 <header>
   <h1>Mingle and Tingle</h1>
   <div style="display:flex;gap:0.5rem;align-items:center">
@@ -277,6 +313,10 @@ input:focus { border-color: var(--accent); }
     <select id="character"></select>
   </div>
 </header>
+<div id="charbar">
+  <img id="portrait" alt="Character portrait" />
+  <div><div class="nm" id="charname"></div><div class="rl" id="charrole"></div></div>
+</div>
 <p class="hint">Memory persists within a session</p>
 <div id="chat"></div>
 <footer>
@@ -291,6 +331,16 @@ const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const charSelect = document.getElementById("character");
 const backendSelect = document.getElementById("backend");
+const charData = {};
+
+function setCharacterArt(id) {
+  const c = charData[id] || {};
+  const p = document.getElementById("portrait");
+  if (c.portrait) { p.src = c.portrait; p.alt = (c.name || "Character") + " portrait"; }
+  document.getElementById("charname").textContent = c.name || "";
+  document.getElementById("charrole").textContent = c.role || "";
+  if (c.background) document.getElementById("bg").style.backgroundImage = "url(" + c.background + ")";
+}
 
 const openings = {
   elara: "Elara glances up. \\"Didn't expect company. What's on your mind?\\"",
@@ -308,8 +358,10 @@ async function loadCharacters() {
       opt.value = c.id;
       opt.textContent = c.name;
       charSelect.appendChild(opt);
+      charData[c.id] = c;
     });
     characterId = chars[0]?.id || "elara";
+    setCharacterArt(characterId);
     showOpening(characterId);
   } catch (e) {
     addBot("Could not load characters. Check the server.");
@@ -324,6 +376,7 @@ function showOpening(id) {
 
 charSelect.addEventListener("change", () => {
   characterId = charSelect.value;
+  setCharacterArt(characterId);
   showOpening(characterId);
 });
 
