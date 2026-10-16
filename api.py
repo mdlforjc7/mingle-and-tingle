@@ -298,6 +298,9 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
   border: 2px solid var(--accent); background: var(--panel); flex: none; }
 #charbar .nm { font-weight: 600; color: var(--accent); font-size: 1rem; }
 #charbar .rl { font-size: 0.8rem; color: var(--muted); }
+#hero { width: 100%; max-width: 720px; padding: 1.5rem 1rem 0.5rem; text-align: center; }
+#hero h2 { font-size: 1.4rem; color: var(--accent); margin-bottom: 0.5rem; font-weight: 700; }
+#hero p { font-size: 0.95rem; color: var(--text); opacity: 0.85; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -313,6 +316,10 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
     <select id="character"></select>
   </div>
 </header>
+<div id="hero">
+  <h2>Your next great conversation starts here.</h2>
+  <p>Meet Elara, Sofia, Kai, and Marcus. Chat, flirt, connect &mdash; and soon, meet real members too.</p>
+</div>
 <div id="charbar">
   <img id="portrait" alt="Character portrait" />
   <div><div class="nm" id="charname"></div><div class="rl" id="charrole"></div></div>
@@ -455,7 +462,7 @@ AGE_GATE_SNIPPET = """<div id="age-gate">
   <div class="age-card">
     <h2>Mingle and Tingle</h2>
     <p class="age-sub">Adults only &middot; 18+</p>
-    <p>This site contains adult-oriented AI companion entertainment intended strictly for adults. All characters are fictional and 18 years of age or older.</p>
+    <p>This site contains adult-oriented chat intended strictly for adults. All characters are fictional and 18 years of age or older.</p>
     <p>You must be 18 years old or older (or the age of majority in your jurisdiction) to enter.</p>
     <div class="age-btns">
       <button id="age-enter">I am 18 or older &mdash; Enter</button>
@@ -524,7 +531,7 @@ TERMS_HTML = """<!DOCTYPE html>
 <p class="updated">Last updated: October 15, 2026</p>
 
 <h2>1. What Mingle and Tingle is</h2>
-<p>Mingle and Tingle ("the Service") provides AI companion characters you can chat with. <strong>All characters are fictional adults, 18 years of age or older.</strong> The Service is not a dating service, escort service, or a way to meet real people. Features for connecting real people may be added in the future and will be covered by updated terms.</p>
+<p>Mingle and Tingle ("the Service") provides characters you can chat with. <strong>All characters are fictional adults, 18 years of age or older.</strong> Features for connecting real people may be added in the future and will be covered by updated terms.</p>
 
 <h2>2. Who may use the Service</h2>
 <p>You must be <strong>18 years old or older</strong> (or the age of majority in your jurisdiction, if higher) to use the Service. By using the Service you confirm that you meet this requirement. If you are under 18, you must leave immediately.</p>
