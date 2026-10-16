@@ -301,6 +301,8 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
 #hero { width: 100%; max-width: 720px; padding: 1.5rem 1rem 0.5rem; text-align: center; }
 #hero h2 { font-size: 1.4rem; color: var(--accent); margin-bottom: 0.5rem; font-weight: 700; }
 #hero p { font-size: 0.95rem; color: var(--text); opacity: 0.85; line-height: 1.5; }
+.fineprint { width: 100%; max-width: 720px; margin: 0 auto; padding: 0.5rem 1rem 2rem; text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.7; }
+.fineprint a { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -330,6 +332,7 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
   <input type="text" id="input" placeholder="Say something…" autocomplete="off" />
   <button id="send">Send</button>
 </footer>
+<div class="fineprint">All characters are fictional and 18 years of age or older. &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a></div>
 <script>
 let sessionId = null;
 let characterId = null;
@@ -462,7 +465,7 @@ AGE_GATE_SNIPPET = """<div id="age-gate">
   <div class="age-card">
     <h2>Mingle and Tingle</h2>
     <p class="age-sub">Adults only &middot; 18+</p>
-    <p>This site contains adult-oriented chat intended strictly for adults. All characters are fictional and 18 years of age or older.</p>
+    <p>This site contains adult-oriented chat intended strictly for adults.</p>
     <p>You must be 18 years old or older (or the age of majority in your jurisdiction) to enter.</p>
     <div class="age-btns">
       <button id="age-enter">I am 18 or older &mdash; Enter</button>
