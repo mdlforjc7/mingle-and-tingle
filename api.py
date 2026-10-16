@@ -150,6 +150,13 @@ def api_list_characters():
 
 @app.post("/api/chat", response_model=ChatResponse)
 def api_chat(req: ChatRequest, request: Request):
+    # 18+ gate: the chat UI sets the mt_age=1 cookie when the visitor passes
+    # the age gate. The API refuses to generate content without it.
+    if request.cookies.get("mt_age") != "1":
+        raise HTTPException(
+            status_code=403,
+            detail="Age verification required. Please confirm you are 18 or older on the homepage first.",
+        )
     try:
         char = get_character(req.character_id)
     except ValueError as e:
@@ -383,6 +390,197 @@ input.focus();
 """
 
 
+# ---------------------------------------------------------------------------
+# 18+ age gate + legal pages
+# ---------------------------------------------------------------------------
+# Mingle and Tingle carries adult-oriented AI companion content. A click-through
+# 18+ gate covers the UI, and /api/chat additionally requires the mt_age=1
+# cookie so the API cannot be used without passing the gate. (Stronger,
+# ID-checked verification arrives with the paid tier and its payment setup.)
+
+AGE_GATE_SNIPPET = """<div id="age-gate">
+  <div class="age-card">
+    <h2>Mingle and Tingle</h2>
+    <p class="age-sub">Adults only &middot; 18+</p>
+    <p>This site contains adult-oriented AI companion entertainment intended strictly for adults. All characters are fictional and 18 years of age or older.</p>
+    <p>You must be 18 years old or older (or the age of majority in your jurisdiction) to enter.</p>
+    <div class="age-btns">
+      <button id="age-enter">I am 18 or older &mdash; Enter</button>
+      <button id="age-exit" class="ghost">I am under 18 &mdash; Exit</button>
+    </div>
+    <p class="age-fine">By entering you agree to our <a href="/terms">Terms of Service</a> and <a href="/privacy">Privacy Policy</a>.</p>
+  </div>
+</div>
+<div class="legal-bar"><a href="/terms">Terms</a><span>&middot;</span><a href="/privacy">Privacy</a><span>&middot;</span><span>18+ only</span></div>
+<style>
+#age-gate { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(12,12,15,0.98); padding: 1rem; }
+.age-card { max-width: 440px; background: #1a1a22; border: 1px solid #2a2a35; border-radius: 16px; padding: 2rem; text-align: center; }
+.age-card h2 { color: #c4a77d; margin-bottom: 0.25rem; }
+.age-sub { color: #9a9690; font-size: 0.85rem; margin-bottom: 1rem; letter-spacing: 0.05em; }
+.age-card p { font-size: 0.95rem; line-height: 1.5; margin-bottom: 1rem; color: #e8e6e3; }
+.age-btns { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.25rem 0; }
+.age-btns button { padding: 0.8rem; font-size: 1rem; }
+#age-exit.ghost { background: transparent; border: 1px solid #2a2a35; color: #9a9690; }
+.age-fine { font-size: 0.75rem !important; color: #9a9690 !important; margin-bottom: 0 !important; }
+.age-fine a, .legal-bar a { color: #c4a77d; }
+.legal-bar { width: 100%; max-width: 720px; margin: 0 auto; padding: 0.25rem 1rem 1.5rem; text-align: center; font-size: 0.75rem; color: #9a9690; display: flex; gap: 0.6rem; justify-content: center; }
+</style>
+<script>
+(function () {
+  var KEY = "mt_age_ok";
+  function verified() { try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; } }
+  function setVerified() {
+    try { localStorage.setItem(KEY, "1"); } catch (e) {}
+    document.cookie = "mt_age=1; path=/; max-age=31536000; SameSite=Lax";
+  }
+  var gate = document.getElementById("age-gate");
+  document.getElementById("age-enter").addEventListener("click", function () { setVerified(); gate.style.display = "none"; });
+  document.getElementById("age-exit").addEventListener("click", function () {
+    document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:2rem;color:#9a9690;font-family:system-ui,sans-serif"><div><h2 style="color:#c4a77d;margin-bottom:1rem">Mingle and Tingle</h2><p>You must be 18 or older to use this site.</p></div></div>';
+  });
+  if (verified()) { setVerified(); gate.style.display = "none"; }
+})();
+</script>
+"""
+
+LEGAL_STYLE = """
+<style>
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #0f0f12; color: #e8e6e3; margin: 0; padding: 0; }
+main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; line-height: 1.65; }
+h1 { color: #c4a77d; font-size: 1.6rem; margin-bottom: 0.25rem; }
+.updated { color: #9a9690; font-size: 0.8rem; margin-bottom: 2rem; }
+h2 { color: #c4a77d; font-size: 1.1rem; margin: 2rem 0 0.5rem; }
+p, li { font-size: 0.95rem; }
+ul { padding-left: 1.25rem; }
+a { color: #c4a77d; }
+.back { display: inline-block; margin-top: 2.5rem; font-size: 0.9rem; }
+</style>
+"""
+
+TERMS_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Terms of Service &mdash; Mingle and Tingle</title>
+""" + LEGAL_STYLE + """
+</head>
+<body>
+<main>
+<h1>Terms of Service</h1>
+<p class="updated">Last updated: October 15, 2026</p>
+
+<h2>1. What Mingle and Tingle is</h2>
+<p>Mingle and Tingle ("the Service") provides AI companion characters you can chat with for entertainment. <strong>All characters are fictional adults, 18 years of age or older.</strong> The Service is not a dating service, escort service, or a way to meet real people. Features for connecting real people may be added in the future and will be covered by updated terms.</p>
+
+<h2>2. Who may use the Service</h2>
+<p>You must be <strong>18 years old or older</strong> (or the age of majority in your jurisdiction, if higher) to use the Service. By using the Service you confirm that you meet this requirement. If you are under 18, you must leave immediately.</p>
+
+<h2>3. Acceptable use</h2>
+<p>You agree not to:</p>
+<ul>
+<li>Use the Service for anything illegal, or to request content involving minors in any form &mdash; attempts of this kind will result in an immediate ban and may be reported to the authorities;</li>
+<li>Harass, threaten, or abuse the Service or other users;</li>
+<li>Attempt to break, overload, reverse-engineer, or scrape the Service;</li>
+<li>Use automated scripts or bots to access the Service without permission.</li>
+</ul>
+
+<h2>4. Nature of the content</h2>
+<p>Character replies are generated by artificial intelligence for entertainment only. They may be inaccurate, inconsistent, or inappropriate, and are not professional, medical, legal, or relationship advice. Nothing a character says reflects the views of Mingle and Tingle.</p>
+
+<h2>5. Free use and paid plans</h2>
+<p>The Service currently offers a free tier with daily usage limits. Paid subscription plans may be introduced. When they are:</p>
+<ul>
+<li>Plans are billed in advance for each billing period;</li>
+<li>You may cancel at any time &mdash; cancellation takes effect at the end of the current billing period;</li>
+<li>Refund requests must be made within 7 days of the charge by contacting support@mingleandtingle.com, and are reviewed case by case.</li>
+</ul>
+
+<h2>6. Suspension and termination</h2>
+<p>We may suspend or terminate access for anyone who violates these terms, abuses the Service, or uses it unlawfully, without prior notice.</p>
+
+<h2>7. Intellectual property</h2>
+<p>The Service, its characters, design, and content are owned by Mingle and Tingle. You keep the rights to the messages you send, and you grant us a license to process them as needed to operate the Service (for example, to generate replies and maintain short-term memory).</p>
+
+<h2>8. Disclaimers and liability</h2>
+<p>The Service is provided "as is" without warranties of any kind. To the maximum extent permitted by law, our total liability for any claim is limited to the amounts you paid us in the 12 months before the claim.</p>
+
+<h2>9. Changes to these terms</h2>
+<p>We may update these terms as the Service evolves. Continued use after changes take effect means you accept the updated terms.</p>
+
+<h2>10. Contact</h2>
+<p>Questions about these terms: <a href="mailto:support@mingleandtingle.com">support@mingleandtingle.com</a></p>
+
+<a class="back" href="/">&larr; Back to Mingle and Tingle</a>
+</main>
+</body>
+</html>
+"""
+
+PRIVACY_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy &mdash; Mingle and Tingle</title>
+""" + LEGAL_STYLE + """
+</head>
+<body>
+<main>
+<h1>Privacy Policy</h1>
+<p class="updated">Last updated: October 15, 2026</p>
+
+<h2>1. What we collect</h2>
+<ul>
+<li><strong>Chat messages</strong> &mdash; what you type is processed to generate character replies and to maintain short-term conversation memory;</li>
+<li><strong>IP address</strong> &mdash; used for daily usage limits and abuse prevention;</li>
+<li><strong>Browser storage</strong> &mdash; your browser keeps your age-verification choice and session identifier locally (localStorage) plus one cookie for the age gate;</li>
+<li><strong>No accounts yet</strong> &mdash; we do not currently ask for your name, email, or payment details. That will change when paid plans launch, and this policy will be updated first.</li>
+</ul>
+
+<h2>2. How we use it</h2>
+<p>We use the information above to operate the Service, generate replies, enforce usage limits, and protect the Service from abuse. We do not use your messages for advertising.</p>
+
+<h2>3. Who we share it with</h2>
+<ul>
+<li>Our AI provider, which processes messages to generate character replies;</li>
+<li>A payment processor, once paid plans launch;</li>
+<li>Law enforcement or regulators where required by law.</li>
+</ul>
+<p>We do not sell your personal information.</p>
+
+<h2>4. How long we keep it</h2>
+<p>Chat sessions expire after about 4 hours of inactivity. Daily usage counters reset each day. Browser storage stays on your device until you clear it.</p>
+
+<h2>5. Your rights</h2>
+<p>You may ask what information we hold about you or ask us to delete it by contacting <a href="mailto:support@mingleandtingle.com">support@mingleandtingle.com</a>. Because there are no accounts yet, we can only act on requests we can reasonably verify (for example, from the IP address concerned).</p>
+
+<h2>6. Children</h2>
+<p>The Service is for adults 18 and older only. We do not knowingly collect information from anyone under 18; if we learn that we have, we will delete it.</p>
+
+<h2>7. Changes to this policy</h2>
+<p>We will update this policy as the Service evolves &mdash; especially before paid plans or user accounts launch &mdash; and post the new version here.</p>
+
+<h2>8. Contact</h2>
+<p>Privacy questions: <a href="mailto:support@mingleandtingle.com">support@mingleandtingle.com</a></p>
+
+<a class="back" href="/">&larr; Back to Mingle and Tingle</a>
+</main>
+</body>
+</html>
+"""
+
+
 @app.get("/", response_class=HTMLResponse)
 def chat_ui():
-    return CHAT_HTML
+    return CHAT_HTML.replace("</body>", AGE_GATE_SNIPPET + "</body>")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    return TERMS_HTML
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return PRIVACY_HTML
