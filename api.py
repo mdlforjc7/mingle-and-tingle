@@ -15,10 +15,11 @@ import time
 from typing import Dict, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import os
 
 from characters import list_characters, get_character
 from agents.langgraph_agent import build_companion_graph, chat_with_graph
@@ -51,6 +52,44 @@ def get_or_create_graph(session_id: str, character_id: str, backend: str = "sqli
         )
         _sessions[key] = {"graph": graph, "created": time.time()}
     return _sessions[key]["graph"]
+
+
+# ---------------------------------------------------------------------------
+# Free-tier rate limit (cost protection)
+# ---------------------------------------------------------------------------
+# Every /api/chat message costs real xAI credits (~$0.01 once conversation
+# history accumulates). Without a cap, one heavy user or a simple loop could
+# burn $25+/hour of prepaid credits. Cap attempts per IP per UTC day; the paid
+# tier (phase 1 paywall) will replace this with account-based limits.
+RATE_LIMIT_PER_DAY = int(os.getenv("RATE_LIMIT_PER_DAY", "60"))
+
+_usage: Dict[str, dict] = {}  # ip -> {"day": "YYYY-MM-DD", "count": int}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def check_rate_limit(ip: str) -> Optional[str]:
+    """Returns a friendly notice if the free daily budget is spent, else None."""
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    entry = _usage.get(ip)
+    if not entry or entry["day"] != today:
+        entry = {"day": today, "count": 0}
+        _usage[ip] = entry
+    if len(_usage) > 5000:  # opportunistic cleanup of stale IPs
+        for k in [k for k, v in _usage.items() if v["day"] != today]:
+            _usage.pop(k, None)
+    if entry["count"] >= RATE_LIMIT_PER_DAY:
+        return (
+            f"That's all my free chats for today ({RATE_LIMIT_PER_DAY}). "
+            "Unlimited plans are coming soon \u2014 come back tomorrow!"
+        )
+    entry["count"] += 1
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -110,11 +149,15 @@ def api_list_characters():
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def api_chat(req: ChatRequest):
+def api_chat(req: ChatRequest, request: Request):
     try:
         char = get_character(req.character_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    limit_msg = check_rate_limit(_client_ip(request))
+    if limit_msg:
+        raise HTTPException(status_code=429, detail=limit_msg)
 
     session_id = req.session_id or str(uuid.uuid4())
     graph = get_or_create_graph(session_id, req.character_id, backend=req.backend)
@@ -155,7 +198,12 @@ def api_memory(character_id: str, session_id: str = "default"):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "sessions": len(_sessions), "characters": list_characters()}
+    return {
+        "status": "ok",
+        "sessions": len(_sessions),
+        "characters": list_characters(),
+        "free_chats_per_day": RATE_LIMIT_PER_DAY,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +359,10 @@ async function send() {
       })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Error");
+    if (!res.ok) {
+      if (res.status === 429) { addBot(data.detail || "Daily free chat limit reached.", characterId); return; }
+      throw new Error(data.detail || "Error");
+    }
     sessionId = data.session_id;
     addBot(data.reply, data.character_id);
   } catch (e) {
