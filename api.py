@@ -23,6 +23,7 @@ import os
 
 from characters import list_characters, get_character
 from agents.langgraph_agent import build_companion_graph, chat_with_graph
+from phase2 import mount_phase2
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +118,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Phase 2: real-member features (accounts, profiles, messaging, billing)
+mount_phase2(app)
 
 
 class ChatRequest(BaseModel):
