@@ -303,6 +303,22 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
 #hero p { font-size: 0.95rem; color: var(--text); opacity: 0.85; line-height: 1.5; }
 .fineprint { width: 100%; max-width: 720px; margin: 0 auto; padding: 0.5rem 1rem 2rem; text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.7; }
 .fineprint a { color: var(--muted); }
+@media (max-width: 600px) {
+  header { padding: 1rem 0.75rem 0.25rem; }
+  header h1 { font-size: 1rem; }
+  select { font-size: 0.85rem; padding: 0.5rem; }
+  #hero { padding: 1rem 0.75rem 0.25rem; }
+  #hero h2 { font-size: 1.15rem; }
+  #hero p { font-size: 0.9rem; }
+  #chat { padding: 0.75rem; gap: 0.6rem; }
+  .msg { max-width: 92%; font-size: 0.92rem; padding: 0.65rem 0.9rem; }
+  #charbar { padding: 0.25rem 0.75rem 0.5rem; }
+  #portrait { width: 48px; height: 48px; }
+  footer { padding: 0.6rem 0.75rem 1rem; gap: 0.4rem; }
+  input[type="text"] { font-size: 16px; padding: 0.7rem 0.9rem; }
+  button#send { padding: 0.7rem 1.1rem; font-size: 0.95rem; }
+  .hint { padding: 0 0.75rem 0.4rem; }
+}
 </style>
 </head>
 <body>
