@@ -16,7 +16,7 @@ from typing import Dict, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import os
@@ -144,7 +144,7 @@ _IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img")
 _IMG_CACHE: Dict[str, bytes] = {}
 if os.path.isdir(_IMG_DIR):
     for _fname in os.listdir(_IMG_DIR):
-        if _fname.endswith(".webp"):
+        if _fname.endswith((".webp", ".png")):
             with open(os.path.join(_IMG_DIR, _fname), "rb") as _f:
                 _IMG_CACHE[_fname] = _f.read()
 
@@ -154,11 +154,48 @@ def serve_img(name: str):
     data = _IMG_CACHE.get(name)
     if data is None:
         raise HTTPException(status_code=404, detail="Image not found")
+    media_type = "image/png" if name.endswith(".png") else "image/webp"
     return Response(
         content=data,
-        media_type="image/webp",
+        media_type=media_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+# ---------------------------------------------------------------------------
+# PWA: installable "Add to Home Screen" web app (no app-store needed)
+# ---------------------------------------------------------------------------
+PWA_MANIFEST = {
+    "name": "Mingle and Tingle",
+    "short_name": "Mingle&Tingle",
+    "description": "Your next great conversation starts here.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#0f0f12",
+    "theme_color": "#0f0f12",
+    "icons": [
+        {"src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png",
+         "purpose": "any maskable"},
+    ],
+}
+
+
+@app.get("/manifest.webmanifest")
+def serve_manifest():
+    return JSONResponse(content=PWA_MANIFEST)
+
+
+PWA_HEAD = """
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#0f0f12" />
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+"""
 
 
 @app.get("/api/characters")
@@ -253,7 +290,7 @@ CHAT_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Mingle and Tingle</title>
-<style>
+""" + PWA_HEAD + """<style>
 :root {
   --bg: #0f0f12; --panel: #1a1a22; --border: #2a2a35;
   --text: #e8e6e3; --muted: #9a9690; --accent: #c4a77d;
@@ -546,7 +583,7 @@ TERMS_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Terms of Service &mdash; Mingle and Tingle</title>
-""" + LEGAL_STYLE + """
+""" + PWA_HEAD + LEGAL_STYLE + """
 </head>
 <body>
 <main>
@@ -615,7 +652,7 @@ PRIVACY_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Privacy Policy &mdash; Mingle and Tingle</title>
-""" + LEGAL_STYLE + """
+""" + PWA_HEAD + LEGAL_STYLE + """
 </head>
 <body>
 <main>

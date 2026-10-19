@@ -38,7 +38,10 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# Render disk mount: set DATA_DIR=/var/data in the Render dashboard after
+# attaching a persistent disk at /var/data. Falls back to local ./data so
+# development and non-disk deploys keep working unchanged.
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "phase2.db")
 
@@ -1312,6 +1315,12 @@ FOOTER = """
 def _page(title: str, body: str, nav: bool = True) -> str:
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<meta name="theme-color" content="#0f0f12"/>
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <title>{title} &mdash; Mingle and Tingle</title><style>{PAGE_CSS}</style></head>
 <body>{NAV if nav else ""}<div class="wrap">{body}</div>{FOOTER}</body></html>"""
 
@@ -1375,33 +1384,46 @@ MEMBERS_HTML = _page("Members", """
   <button id="apply" class="ghost">Filter</button>
 </div>
 <div class="grid" id="grid"></div>
+<div style="text-align:center;margin:1rem 0"><button id="more" class="ghost" style="display:none">Show more members</button></div>
 <div class="err" id="err"></div>
 <script>
 const GENDERS = ["Woman","Man","Nonbinary","Prefer not to say"];
 GENDERS.forEach(g => fgen.insertAdjacentHTML("beforeend", `<option>${g}</option>`));
-async function load() {
+const PAGE_SIZE = 24;
+let moffset = 0, hasMore = true, loading = false;
+async function load(reset) {
+  if (loading) return;
+  loading = true;
   err.textContent = "";
-  const q = new URLSearchParams({ seeking: fseek.value, gender: fgen.value });
+  if (reset) { moffset = 0; hasMore = true; grid.innerHTML = ""; }
+  const q = new URLSearchParams({ seeking: fseek.value, gender: fgen.value,
+                                  limit: PAGE_SIZE, offset: moffset });
   const r = await fetch("/api/v2/discover?" + q);
   if (r.status === 401) { location.href = "/login"; return; }
   if (r.status === 402) { grid.innerHTML = '<div class="card">Your trial or subscription has ended.</div>'; return; }
   const d = await r.json();
-  if (!d.members.length) { grid.innerHTML = '<div class="card">No members yet &mdash; check back soon.</div>'; return; }
-  grid.innerHTML = d.members.map(m => `
+  if (reset && !d.members.length) { grid.innerHTML = '<div class="card">No members yet &mdash; check back soon.</div>'; }
+  grid.insertAdjacentHTML("beforeend", d.members.map(m => `
     <a class="mcard" href="/profile/${m.id}">
       ${m.photo_url ? `<img src="${m.photo_url}" loading="lazy"/>` : `<div class="ph">?</div>`}
       <div class="inf"><div class="nm">${esc(m.display_name)}</div>
       <div class="mt">${esc(m.seeking || "")} ${m.location ? "&middot; " + esc(m.location) : ""}</div>
       <div class="score">${m.match_score}% match</div></div>
-    </a>`).join("");
+    </a>`).join(""));
+  hasMore = d.members.length === PAGE_SIZE;
+  if (hasMore) moffset += d.members.length;
+  more.style.display = hasMore ? "" : "none";
+  loading = false;
+}
 }
 function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-apply.onclick = load;
+apply.onclick = () => load(true);
+more.onclick = () => load(false);
 (async () => {
   const meta = await (await fetch("/api/v2/questionnaire-meta")).json();
   (meta.questions.find(q => q.key === "looking_for").options || []).forEach(o =>
     fseek.insertAdjacentHTML("beforeend", `<option>${o}</option>`));
-  load();
+  load(true);
 })();
 </script>
 """)
