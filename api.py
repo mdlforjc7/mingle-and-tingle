@@ -23,7 +23,7 @@ import os
 
 from characters import list_characters, get_character
 from agents.langgraph_agent import build_companion_graph, chat_with_graph
-from phase2 import mount_phase2
+from phase2 import mount_phase2, get_session_user, subscription_active
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +56,23 @@ def get_or_create_graph(session_id: str, character_id: str, backend: str = "sqli
 
 
 # ---------------------------------------------------------------------------
-# Free-tier rate limit (cost protection)
+# Paywall + member safety cap (cost protection)
 # ---------------------------------------------------------------------------
-# Every /api/chat message costs real xAI credits (~$0.01 once conversation
-# history accumulates). Without a cap, one heavy user or a simple loop could
-# burn $25+/hour of prepaid credits. Cap attempts per IP per UTC day; the paid
-# tier (phase 1 paywall) will replace this with account-based limits.
-RATE_LIMIT_PER_DAY = int(os.getenv("RATE_LIMIT_PER_DAY", "60"))
+# There is no free tier: AI chat requires a logged-in account with an
+# active 30-day trial or a paid subscription ($19.99/mo) — the same
+# membership that covers real-member features in phase2.py. Signup starts
+# the trial; no card is collected until CCBill/Epoch billing is connected.
+# Set PAYWALL_ENABLED=0 only for local development/testing.
+PAYWALL_ENABLED = os.getenv("PAYWALL_ENABLED", "1") != "0"
 
-_usage: Dict[str, dict] = {}  # ip -> {"day": "YYYY-MM-DD", "count": int}
+# Every /api/chat message costs real xAI credits (~$0.01 once conversation
+# history accumulates). Even for members, keep a generous per-user daily
+# safety cap so one account or a simple loop cannot burn prepaid credits.
+MEMBER_CHAT_LIMIT_PER_DAY = int(os.getenv("MEMBER_CHAT_LIMIT_PER_DAY", "500"))
+# Back-compat name (older code/health checks referenced this).
+RATE_LIMIT_PER_DAY = MEMBER_CHAT_LIMIT_PER_DAY
+
+_usage: Dict[str, dict] = {}  # key -> {"day": "YYYY-MM-DD", "count": int}
 
 
 def _client_ip(request: Request) -> str:
@@ -74,20 +82,20 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def check_rate_limit(ip: str) -> Optional[str]:
-    """Returns a friendly notice if the free daily budget is spent, else None."""
+def check_rate_limit(key: str, limit: int = MEMBER_CHAT_LIMIT_PER_DAY) -> Optional[str]:
+    """Returns a friendly notice if the daily safety cap is spent, else None."""
     today = time.strftime("%Y-%m-%d", time.gmtime())
-    entry = _usage.get(ip)
+    entry = _usage.get(key)
     if not entry or entry["day"] != today:
         entry = {"day": today, "count": 0}
-        _usage[ip] = entry
-    if len(_usage) > 5000:  # opportunistic cleanup of stale IPs
+        _usage[key] = entry
+    if len(_usage) > 5000:  # opportunistic cleanup of stale keys
         for k in [k for k, v in _usage.items() if v["day"] != today]:
             _usage.pop(k, None)
-    if entry["count"] >= RATE_LIMIT_PER_DAY:
+    if entry["count"] >= limit:
         return (
-            f"That's all my free chats for today ({RATE_LIMIT_PER_DAY}). "
-            "Unlimited plans are coming soon \u2014 come back tomorrow!"
+            f"You've reached today's chat limit ({limit} messages). "
+            "It resets tomorrow \u2014 come back then!"
         )
     entry["count"] += 1
     return None
@@ -229,7 +237,31 @@ def api_chat(req: ChatRequest, request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    limit_msg = check_rate_limit(_client_ip(request))
+    # Paywall: no free tier. AI chat is members-only — a logged-in account
+    # with an active trial or subscription (same check as member features).
+    limit_key = f"ip:{_client_ip(request)}"
+    if PAYWALL_ENABLED:
+        user = get_session_user(request)
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Membership required to chat. Start your 30-day free "
+                    "trial at /signup, or log in at /login if you already "
+                    "have an account."
+                ),
+            )
+        if not subscription_active(user["id"]):
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    "Your trial or subscription has ended. Renew your "
+                    "membership from your account page to keep chatting."
+                ),
+            )
+        limit_key = f"user:{user['id']}"
+
+    limit_msg = check_rate_limit(limit_key)
     if limit_msg:
         raise HTTPException(status_code=429, detail=limit_msg)
 
@@ -276,7 +308,9 @@ def health():
         "status": "ok",
         "sessions": len(_sessions),
         "characters": list_characters(),
-        "free_chats_per_day": RATE_LIMIT_PER_DAY,
+        "paywall_required": PAYWALL_ENABLED,
+        "free_chats_per_day": 0,
+        "member_chats_per_day_limit": MEMBER_CHAT_LIMIT_PER_DAY,
     }
 
 
@@ -379,6 +413,7 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
   <h2>Your next great conversation starts here.</h2>
   <p>Meet Elara, Sofia, Kai, and Marcus. Chat, flirt, connect &mdash; and soon, meet real members too.</p>
 </div>
+<div id="paywallNotice" style="display:none;width:100%;max-width:720px;padding:0.75rem 1rem;margin:0 1rem 0.5rem;background:#1a1a22;border:1px solid #c4a77d;border-radius:12px;text-align:center;font-size:0.95rem;line-height:1.5"></div>
 <div id="charbar">
   <img id="portrait" alt="Character portrait" />
   <div><div class="nm" id="charname"></div><div class="rl" id="charrole"></div></div>
@@ -467,6 +502,53 @@ function addUser(text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+function addPaywallBot(text, expired) {
+  const div = document.createElement("div");
+  div.className = "msg bot";
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = "Mingle and Tingle";
+  div.appendChild(name);
+  div.appendChild(document.createTextNode(text + " "));
+  if (expired) {
+    const a = document.createElement("a");
+    a.href = "/account"; a.textContent = "Go to my account";
+    a.style.color = "#c4a77d"; a.style.fontWeight = "600";
+    div.appendChild(a);
+  } else {
+    const a = document.createElement("a");
+    a.href = "/signup"; a.textContent = "Start my 30-day free trial";
+    a.style.color = "#c4a77d"; a.style.fontWeight = "600";
+    div.appendChild(a);
+    div.appendChild(document.createTextNode(" \u00b7 Already a member? "));
+    const b = document.createElement("a");
+    b.href = "/login"; b.textContent = "Log in";
+    b.style.color = "#c4a77d"; b.style.fontWeight = "600";
+    div.appendChild(b);
+  }
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function checkMembership() {
+  const notice = document.getElementById("paywallNotice");
+  try {
+    const res = await fetch("/api/v2/me");
+    if (res.status === 401) {
+      notice.innerHTML = 'Members only &mdash; chatting takes a membership. <a href="/signup" style="color:#c4a77d;font-weight:600">Start your 30-day free trial</a> &middot; Already a member? <a href="/login" style="color:#c4a77d;font-weight:600">Log in</a>';
+      notice.style.display = "block";
+      return;
+    }
+    if (res.ok) {
+      const me = await res.json();
+      if (me.subscription && !me.subscription.active) {
+        notice.innerHTML = 'Your trial or subscription has ended. <a href="/account" style="color:#c4a77d;font-weight:600">Renew from your account page</a> to keep chatting.';
+        notice.style.display = "block";
+      }
+    }
+  } catch (e) { /* notice is best-effort; the API enforces the paywall */ }
+}
+
 async function send() {
   const text = input.value.trim();
   if (!text) return;
@@ -487,7 +569,9 @@ async function send() {
     });
     const data = await res.json();
     if (!res.ok) {
-      if (res.status === 429) { addBot(data.detail || "Daily free chat limit reached.", characterId); return; }
+      if (res.status === 401) { addPaywallBot(data.detail || "Membership required to chat.", false); return; }
+      if (res.status === 402) { addPaywallBot(data.detail || "Your trial or subscription has ended.", true); return; }
+      if (res.status === 429) { addBot(data.detail || "Daily chat limit reached.", characterId); return; }
       throw new Error(data.detail || "Error");
     }
     sessionId = data.session_id;
@@ -503,6 +587,7 @@ async function send() {
 sendBtn.addEventListener("click", send);
 input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
 loadCharacters();
+checkMembership();
 input.focus();
 </script>
 </body>

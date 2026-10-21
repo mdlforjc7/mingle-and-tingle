@@ -13,7 +13,8 @@ Phase 2: real-member features for Mingle and Tingle.
 - Billing abstraction ready for CCBill / Epoch (merchant approval pending)
 
 All member features require 18+ (birthdate checked at signup) and an
-active subscription or trial. The AI-character chat in api.py is untouched.
+active subscription or trial. The AI-character chat in api.py enforces
+the same paywall via get_session_user() + subscription_active() here.
 """
 
 from __future__ import annotations
