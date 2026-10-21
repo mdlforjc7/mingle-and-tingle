@@ -42,12 +42,53 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Render disk mount: set DATA_DIR=/var/data in the Render dashboard after
 # attaching a persistent disk at /var/data. Falls back to local ./data so
 # development and non-disk deploys keep working unchanged.
-DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
+#
+# Deploy fix (2026-10-21): on fresh Render deploys the disk at /var/data is
+# briefly not writable while the app first starts, and the old module-level
+# os.makedirs() crashed the whole boot with
+# "PermissionError: [Errno 13] Permission denied: '/var/data'" — two paywall
+# deploys died exactly this way (Exited with status 1). So: probe the env
+# DATA_DIR, retry for a short window while the mount settles, and only then
+# fall back to local ./data. The app must never fail to boot over storage.
+def _resolve_data_dir() -> str:
+    candidates = []
+    env_dir = os.environ.get("DATA_DIR")
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.append(os.path.join(BASE_DIR, "data"))
+    wait_seconds = int(os.environ.get("DATA_DIR_WAIT_SECONDS", "45"))
+    deadline = time.time() + wait_seconds
+    while True:
+        for cand in candidates:
+            try:
+                os.makedirs(cand, exist_ok=True)
+                probe = os.path.join(cand, ".write_probe")
+                with open(probe, "w") as fh:
+                    fh.write("ok")
+                os.remove(probe)
+                if cand != candidates[0]:
+                    print(f"[phase2] DATA_DIR {candidates[0]} unusable, using {cand}", flush=True)
+                return cand
+            except OSError:
+                continue
+        if time.time() >= deadline:
+            print(f"[phase2] WARNING: no writable data dir after {wait_seconds}s; "
+                  f"defaulting to {candidates[0]}", flush=True)
+            return candidates[0]
+        time.sleep(2)
+
+
+DATA_DIR = _resolve_data_dir()
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "phase2.db")
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except OSError as exc:
+    # Never crash boot over directory creation; DB/photo errors will
+    # surface per-request instead of taking the whole site down.
+    print(f"[phase2] WARNING: could not create data dirs: {exc}", flush=True)
 
 SESSION_COOKIE = "mt_session"
 SESSION_TTL = 60 * 60 * 24 * 30  # 30 days
