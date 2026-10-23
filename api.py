@@ -401,11 +401,6 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
 <header>
   <h1>Mingle and Tingle</h1>
   <div style="display:flex;gap:0.5rem;align-items:center">
-    <select id="backend" title="Memory backend">
-      <option value="sqlite">SQLite</option>
-      <option value="chroma">Chroma</option>
-      <option value="memory">Memory</option>
-    </select>
     <select id="character"></select>
   </div>
 </header>
@@ -418,7 +413,6 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
   <img id="portrait" alt="Character portrait" />
   <div><div class="nm" id="charname"></div><div class="rl" id="charrole"></div></div>
 </div>
-<p class="hint">Memory persists within a session</p>
 <div id="chat"></div>
 <footer>
   <input type="text" id="input" placeholder="Say something…" autocomplete="off" />
@@ -432,7 +426,6 @@ const chat = document.getElementById("chat");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const charSelect = document.getElementById("character");
-const backendSelect = document.getElementById("backend");
 const charData = {};
 
 function setCharacterArt(id) {
@@ -564,7 +557,7 @@ async function send() {
         message: text,
         character_id: characterId,
         session_id: sessionId,
-        backend: backendSelect.value
+        backend: "sqlite"
       })
     });
     const data = await res.json();
