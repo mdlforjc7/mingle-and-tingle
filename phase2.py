@@ -1376,16 +1376,39 @@ $19.99/month after that. Cancel anytime.</p>
   <label>Display name</label><input id="dn" type="text" maxlength="40" autocomplete="nickname"/>
   <label>Email</label><input id="em" type="email" autocomplete="email"/>
   <label>Password (8+ characters)</label><input id="pw" type="password" autocomplete="new-password"/>
-  <label>Date of birth (must be 18+)</label><input id="bd" type="date"/>
+  <label>Date of birth (must be 18+)</label>
+  <div style="display:flex;gap:0.5rem">
+    <select id="bdm" style="flex:1.4"><option value="">Month</option></select>
+    <select id="bdd" style="flex:0.8"><option value="">Day</option></select>
+    <select id="bdy" style="flex:1"><option value="">Year</option></select>
+  </div>
+  <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.9rem;color:var(--text)"><input id="ageok" type="checkbox" style="width:20px;height:20px"/> I confirm I am 18 or older</label>
   <div style="margin-top:1rem"><button id="go" style="width:100%">Start my free trial</button></div>
   <p style="margin-top:0.8rem;font-size:0.85rem;color:var(--muted)">Already a member?
   <a href="/login" style="color:var(--accent)">Log in</a></p>
 </div>
 <script>
+const MONTHS = ["January","February","March","April","May","June","July",
+  "August","September","October","November","December"];
+MONTHS.forEach((n, i) => { const o = document.createElement("option");
+  o.value = String(i + 1).padStart(2, "0"); o.textContent = n; bdm.appendChild(o); });
+for (let d = 1; d <= 31; d++) { const o = document.createElement("option");
+  o.value = String(d).padStart(2, "0"); o.textContent = d; bdd.appendChild(o); }
+const YMAX = new Date().getFullYear() - 18;
+for (let y = YMAX; y >= YMAX - 82; y--) { const o = document.createElement("option");
+  o.value = y; o.textContent = y; bdy.appendChild(o); }
 document.getElementById("go").onclick = async () => {
   const err = document.getElementById("err"); err.textContent = "";
+  if (!bdm.value || !bdd.value || !bdy.value) {
+    err.textContent = "Please pick your full date of birth."; return; }
+  const dt = new Date(+bdy.value, +bdm.value - 1, +bdd.value);
+  if (dt.getDate() !== +bdd.value) {
+    err.textContent = "That date doesn't look right - please check it."; return; }
+  if (!ageok.checked) {
+    err.textContent = "Please confirm you are 18 or older."; return; }
+  document.cookie = "mt_age=1; path=/; max-age=31536000; SameSite=Lax";
   const body = { display_name: dn.value.trim(), email: em.value.trim(),
-    password: pw.value, birthdate: bd.value };
+    password: pw.value, birthdate: bdy.value + "-" + bdm.value + "-" + bdd.value };
   const r = await fetch("/api/v2/signup", { method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   const d = await r.json();
