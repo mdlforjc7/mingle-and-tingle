@@ -340,7 +340,7 @@ header {
   width: 100%; max-width: 720px; padding: 1.25rem 1rem 0.5rem;
   display: flex; justify-content: space-between; align-items: center;
 }
-header h1 { font-size: 1.15rem; font-weight: 600; color: var(--accent); }
+header h1 { font-size: 1.15rem; font-weight: 700; color: #ffffff; text-shadow: 0 1px 4px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.7); }
 select, button {
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 0.4rem 0.75rem; font-size: 0.9rem;
