@@ -113,6 +113,7 @@ QUESTIONS: Dict[str, tuple] = {
 LOOKING_FOR_OPTIONS = [
     "A serious relationship",
     "Casual dating",
+    "Friends with benefits",
     "Friendship",
     "Marriage-minded",
     "Just browsing",
