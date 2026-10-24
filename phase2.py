@@ -119,6 +119,7 @@ LOOKING_FOR_OPTIONS = [
     "Just browsing",
 ]
 GENDER_OPTIONS = ["Woman", "Man", "Nonbinary", "Prefer not to say"]
+ETHNICITY_OPTIONS = ["Caucasian", "Black", "Hispanic", "Asian", "Indian", "Other", "Prefer not to say"]
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     birthdate   TEXT NOT NULL,            -- YYYY-MM-DD
     gender      TEXT NOT NULL DEFAULT '',
     seeking     TEXT NOT NULL DEFAULT '',
+    ethnicity   TEXT NOT NULL DEFAULT '',
     location    TEXT NOT NULL DEFAULT '',
     bio         TEXT NOT NULL DEFAULT '',
     updated_at  INTEGER NOT NULL
@@ -239,6 +241,9 @@ def init_db():
     with _db_lock:
         db = _connect()
         db.executescript(SCHEMA)
+        cols = [r[1] for r in db.execute("PRAGMA table_info(profiles)")]
+        if "ethnicity" not in cols:
+            db.execute("ALTER TABLE profiles ADD COLUMN ethnicity TEXT NOT NULL DEFAULT ''")
         # Seed credit packages (idempotent)
         now = int(time.time())
         db.executemany(
@@ -575,7 +580,7 @@ def get_profile(user_id: int) -> Optional[dict]:
 
 
 def update_profile(user_id: int, fields: dict) -> dict:
-    allowed = {"gender", "seeking", "location", "bio"}
+    allowed = {"gender", "seeking", "location", "bio", "ethnicity"}
     updates = {k: str(fields.get(k, ""))[:500] for k in allowed if k in fields}
     if "bio" in updates:
         violation = moderate_text(updates["bio"])
@@ -738,10 +743,10 @@ def compatibility_score(viewer_id: int, other_id: int) -> int:
 
 
 def discover(viewer_id: int, limit: int = 24, offset: int = 0,
-             seeking: str = "", gender: str = "") -> List[dict]:
+             seeking: str = "", gender: str = "", ethnicity: str = "") -> List[dict]:
     with _db_lock:
         db = _connect()
-        q = ("SELECT u.id, u.display_name, p.gender, p.seeking, p.location,"
+        q = ("SELECT u.id, u.display_name, p.gender, p.seeking, p.ethnicity, p.location,"
              " substr(p.bio,1,160) AS bio_snippet"
              " FROM users u JOIN profiles p ON p.user_id=u.id"
              " WHERE u.id != ? AND u.is_active=1 AND u.is_banned=0")
@@ -752,6 +757,9 @@ def discover(viewer_id: int, limit: int = 24, offset: int = 0,
         if seeking:
             q += " AND p.seeking=?"
             params.append(seeking)
+        if ethnicity:
+            q += " AND p.ethnicity=?"
+            params.append(ethnicity)
         q += (" AND NOT EXISTS (SELECT 1 FROM blocks b WHERE"
               " (b.blocker_id=? AND b.blocked_id=u.id)"
               " OR (b.blocker_id=u.id AND b.blocked_id=?))")
@@ -791,6 +799,7 @@ def public_profile(viewer_id: int, user_id: int) -> dict:
         "age": age,
         "gender": prof["gender"],
         "seeking": prof["seeking"],
+        "ethnicity": prof.get("ethnicity", ""),
         "location": prof["location"],
         "bio": prof["bio"],
         "answers": get_answers(user_id),
@@ -1078,6 +1087,7 @@ def api_me(request: Request):
 class ProfileUpdate(BaseModel):
     gender: Optional[str] = None
     seeking: Optional[str] = None
+    ethnicity: Optional[str] = None
     location: Optional[str] = None
     bio: Optional[str] = None
 
@@ -1156,11 +1166,11 @@ def api_serve_photo(filename: str):
 
 @router.get("/discover")
 def api_discover(request: Request, limit: int = 24, offset: int = 0,
-                 seeking: str = "", gender: str = ""):
+                 seeking: str = "", gender: str = "", ethnicity: str = ""):
     user = member_user(request)
     limit = max(1, min(limit, 50))
     return {"members": discover(user["id"], limit=limit, offset=offset,
-                               seeking=seeking, gender=gender)}
+                               seeking=seeking, gender=gender, ethnicity=ethnicity)}
 
 
 @router.get("/members/{user_id}")
@@ -1447,6 +1457,7 @@ MEMBERS_HTML = _page("Members", """
 <div class="card" style="display:flex;gap:0.5rem;flex-wrap:wrap">
   <select id="fseek" style="flex:1;min-width:140px"><option value="">Seeking: any</option></select>
   <select id="fgen" style="flex:1;min-width:140px"><option value="">Gender: any</option></select>
+  <select id="feth" style="flex:1;min-width:140px"><option value="">Ethnicity: any</option></select>
   <button id="apply" class="ghost">Filter</button>
 </div>
 <div class="grid" id="grid"></div>
@@ -1455,6 +1466,8 @@ MEMBERS_HTML = _page("Members", """
 <script>
 const GENDERS = ["Woman","Man","Nonbinary","Prefer not to say"];
 GENDERS.forEach(g => fgen.insertAdjacentHTML("beforeend", `<option>${g}</option>`));
+const ETHNICITIES = ["Caucasian","Black","Hispanic","Asian","Indian","Other","Prefer not to say"];
+ETHNICITIES.forEach(e => feth.insertAdjacentHTML("beforeend", `<option>${e}</option>`));
 const PAGE_SIZE = 24;
 let moffset = 0, hasMore = true, loading = false;
 async function load(reset) {
@@ -1462,7 +1475,7 @@ async function load(reset) {
   loading = true;
   err.textContent = "";
   if (reset) { moffset = 0; hasMore = true; grid.innerHTML = ""; }
-  const q = new URLSearchParams({ seeking: fseek.value, gender: fgen.value,
+  const q = new URLSearchParams({ seeking: fseek.value, gender: fgen.value, ethnicity: feth.value,
                                   limit: PAGE_SIZE, offset: moffset });
   const r = await fetch("/api/v2/discover?" + q);
   if (r.status === 401) { location.href = "/login"; return; }
@@ -1473,7 +1486,7 @@ async function load(reset) {
     <a class="mcard" href="/profile/${m.id}">
       ${m.photo_url ? `<img src="${m.photo_url}" loading="lazy"/>` : `<div class="ph">?</div>`}
       <div class="inf"><div class="nm">${esc(m.display_name)}</div>
-      <div class="mt">${esc(m.seeking || "")} ${m.location ? "&middot; " + esc(m.location) : ""}</div>
+      <div class="mt">${esc(m.seeking || "")} ${m.ethnicity ? "&middot; " + esc(m.ethnicity) : ""} ${m.location ? "&middot; " + esc(m.location) : ""}</div>
       <div class="score">${m.match_score}% match</div></div>
     </a>`).join(""));
   hasMore = d.members.length === PAGE_SIZE;
@@ -1514,6 +1527,7 @@ async function load() {
       <div class="qa"><b>Match score</b>${p.match_score}%</div>
       ${p.gender ? `<div class="qa"><b>Gender</b>${esc(p.gender)}</div>` : ""}
       ${p.seeking ? `<div class="qa"><b>Looking for</b>${esc(p.seeking)}</div>` : ""}
+      ${p.ethnicity ? `<div class="qa"><b>Ethnicity</b>${esc(p.ethnicity)}</div>` : ""}
       ${p.location ? `<div class="qa"><b>Location</b>${esc(p.location)}</div>` : ""}
       ${p.bio ? `<div class="qa"><b>About</b>${esc(p.bio)}</div>` : ""}
       ${qa}
@@ -1613,6 +1627,7 @@ ACCOUNT_HTML = _page("Account", """
 <div class="card">
   <div class="err" id="perr"></div><div class="ok" id="pok"></div>
   <label>Gender</label><select id="gender"></select>
+  <label>Ethnicity</label><select id="ethnicity"></select>
   <label>Looking for</label><select id="seeking"></select>
   <label>Location</label><input id="loc" type="text" maxlength="80" placeholder="City, State"/>
   <label>Bio</label><textarea id="bio" maxlength="500"></textarea>
@@ -1666,11 +1681,13 @@ async function load() {
     alert(d.message || d.error || "Billing");
   };
   gender.innerHTML = GENDERS.map(g => `<option value="${g}">${g || "—"}</option>`).join("");
+  const ETHNICITIES = ["", "Caucasian","Black","Hispanic","Asian","Indian","Other","Prefer not to say"];
+  ethnicity.innerHTML = ETHNICITIES.map(e => `<option value="${e}">${e || "—"}</option>`).join("");
   const meta = await (await fetch("/api/v2/questionnaire-meta")).json();
   seeking.innerHTML = `<option value="">—</option>` + meta.questions
     .find(q => q.key === "looking_for").options.map(o => `<option>${o}</option>`).join("");
   const p = ME.profile || {};
-  gender.value = p.gender || ""; seeking.value = p.seeking || "";
+  gender.value = p.gender || ""; ethnicity.value = p.ethnicity || ""; seeking.value = p.seeking || "";
   loc.value = p.location || ""; bio.value = p.bio || "";
   qa.innerHTML = meta.questions.map(q => `
     <label>${q.label}</label>` +
@@ -1697,7 +1714,7 @@ savep.onclick = async () => {
   perr.textContent = ""; pok.textContent = "";
   const r = await fetch("/api/v2/profile", { method:"PUT",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ gender: gender.value, seeking: seeking.value,
+    body: JSON.stringify({ gender: gender.value, ethnicity: ethnicity.value, seeking: seeking.value,
       location: loc.value, bio: bio.value }) });
   const d = await r.json();
   if (!r.ok) { perr.textContent = d.detail; return; }
