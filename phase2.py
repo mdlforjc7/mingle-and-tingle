@@ -121,7 +121,7 @@ LOOKING_FOR_OPTIONS = [
     "Marriage-minded",
     "Just browsing",
 ]
-GENDER_OPTIONS = ["Woman", "Man", "Nonbinary", "Prefer not to say"]
+GENDER_OPTIONS = ["Woman", "Man", "Nonbinary", "Other", "Prefer not to say"]
 ETHNICITY_OPTIONS = ["Caucasian", "Black", "Hispanic", "Asian", "Indian", "Other", "Prefer not to say"]
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -1596,7 +1596,7 @@ document.getElementById("go").onclick = async () => {
 MEMBERS_HTML = _page("Members", """
 <h1>Members</h1>
 <div class="card" style="display:flex;gap:0.5rem;flex-wrap:wrap">
-  <select id="fseek" style="flex:1;min-width:140px"><option value="">Seeking: any</option></select>
+  <select id="fseek" style="flex:1;min-width:140px"><option value="">Looking for: any</option><option>A serious relationship</option><option>Casual dating</option><option>Friends with benefits</option><option>Friendship</option><option>Marriage-minded</option><option>Just browsing</option></select>
   <select id="fgen" style="flex:1;min-width:140px"><option value="">Gender: any</option></select>
   <select id="feth" style="flex:1;min-width:140px"><option value="">Ethnicity: any</option></select>
   <button id="apply" class="ghost">Filter</button>
@@ -1605,7 +1605,7 @@ MEMBERS_HTML = _page("Members", """
 <div style="text-align:center;margin:1rem 0"><button id="more" class="ghost" style="display:none">Show more members</button></div>
 <div class="err" id="err"></div>
 <script>
-const GENDERS = ["Woman","Man","Nonbinary","Prefer not to say"];
+const GENDERS = ["Woman","Man","Nonbinary","Other","Prefer not to say"];
 GENDERS.forEach(g => fgen.insertAdjacentHTML("beforeend", `<option>${g}</option>`));
 const ETHNICITIES = ["Caucasian","Black","Hispanic","Asian","Indian","Other","Prefer not to say"];
 ETHNICITIES.forEach(e => feth.insertAdjacentHTML("beforeend", `<option>${e}</option>`));
@@ -1640,9 +1640,6 @@ function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;"
 apply.onclick = () => load(true);
 more.onclick = () => load(false);
 (async () => {
-  const meta = await (await fetch("/api/v2/questionnaire-meta")).json();
-  (meta.questions.find(q => q.key === "looking_for").options || []).forEach(o =>
-    fseek.insertAdjacentHTML("beforeend", `<option>${o}</option>`));
   load(true);
 })();
 </script>
@@ -1788,7 +1785,7 @@ ACCOUNT_HTML = _page("Account", """
 </div>
 <div class="card"><button id="logout" class="ghost" style="width:100%">Log out</button></div>
 <script>
-const GENDERS = ["", "Woman","Man","Nonbinary","Prefer not to say"];
+const GENDERS = ["", "Woman","Man","Nonbinary","Other","Prefer not to say"];
 let ME = null;
 async function me() {
   const r = await fetch("/api/v2/me");
