@@ -30,6 +30,9 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import bcrypt
+import hashlib
+import json
+import urllib.request
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
@@ -182,6 +185,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    used        INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS subscriptions (
     user_id               INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     status                TEXT NOT NULL,   -- trialing | active | past_due | canceled
@@ -437,6 +449,89 @@ def destroy_session(request: Request):
             db = _connect()
             db.execute("DELETE FROM sessions WHERE token=?", (token,))
             db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Password / username recovery (email codes via Resend, env-gated)
+# ---------------------------------------------------------------------------
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "Mingle and Tingle <noreply@mingleandtingle.com>")
+RESET_CODE_TTL = 15 * 60
+RESET_MAX_ATTEMPTS = 5
+
+
+def email_configured() -> bool:
+    return bool(RESEND_API_KEY)
+
+
+def _send_email(to: str, subject: str, html: str) -> bool:
+    if not RESEND_API_KEY:
+        return False
+    try:
+        payload = json.dumps({"from": RESEND_FROM, "to": [to], "subject": subject, "html": html}).encode()
+        req = urllib.request.Request(
+            "https://api.resend.com/emails", data=payload, method="POST",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status in (200, 201)
+    except Exception:
+        return False
+
+
+def request_password_reset(email: str) -> bool:
+    user = get_user_by_email(email)
+    if not user:
+        return False
+    code = f"{secrets.randbelow(1000000):06d}"
+    now = _now()
+    with _db_lock:
+        db = _connect()
+        db.execute("UPDATE password_resets SET used=1 WHERE user_id=? AND used=0", (user["id"],))
+        db.execute(
+            "INSERT INTO password_resets (user_id, code_hash, expires_at, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (user["id"], hashlib.sha256(code.encode()).hexdigest(), now + RESET_CODE_TTL, now))
+        db.commit()
+    return _send_email(user["email"], "Your Mingle and Tingle reset code",
+        f"<p>Your password reset code is: <b>{code}</b></p>"
+        "<p>It expires in 15 minutes. If you didn't ask for this, just ignore this email.</p>")
+
+
+def reset_password_with_code(email: str, code: str, new_password: str) -> None:
+    user = get_user_by_email(email)
+    if not user:
+        raise ValueError("Invalid or expired code.")
+    if len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    now = _now()
+    with _db_lock:
+        db = _connect()
+        cur = db.execute(
+            "SELECT * FROM password_resets WHERE user_id=? AND used=0"
+            " ORDER BY id DESC LIMIT 1", (user["id"],))
+        row = _row_to_dict(cur.fetchone())
+        if not row or row["expires_at"] < now or row["attempts"] >= RESET_MAX_ATTEMPTS:
+            raise ValueError("Invalid or expired code.")
+        if hashlib.sha256(code.strip().encode()).hexdigest() != row["code_hash"]:
+            db.execute("UPDATE password_resets SET attempts=attempts+1 WHERE id=?", (row["id"],))
+            db.commit()
+            raise ValueError("Invalid or expired code.")
+        db.execute("UPDATE password_resets SET used=1 WHERE id=?", (row["id"],))
+        db.execute("UPDATE users SET password_hash=? WHERE id=?",
+                   (hash_password(new_password), user["id"]))
+        db.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
+        db.commit()
+
+
+def request_username_reminder(email: str) -> bool:
+    user = get_user_by_email(email)
+    if not user:
+        return False
+    name = str(user["display_name"]).replace("<", "&lt;").replace(">", "&gt;")
+    return _send_email(user["email"], "Your Mingle and Tingle username",
+        f"<p>Your display name on Mingle and Tingle is: <b>{name}</b></p>"
+        "<p>You log in with this email address.</p>")
 
 
 # ---------------------------------------------------------------------------
@@ -1058,6 +1153,42 @@ def api_logout(request: Request):
     return resp
 
 
+class ForgotIn(BaseModel):
+    email: str
+
+
+class ResetIn(BaseModel):
+    email: str
+    code: str
+    new_password: str = Field(min_length=8)
+
+
+@router.get("/email-status")
+def api_email_status():
+    return {"email_configured": email_configured()}
+
+
+@router.post("/forgot-password")
+def api_forgot_password(data: ForgotIn):
+    request_password_reset(data.email)
+    return {"ok": True, "message": "If that email has an account, a reset code was sent."}
+
+
+@router.post("/reset-password")
+def api_reset_password(data: ResetIn):
+    try:
+        reset_password_with_code(data.email, data.code, data.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@router.post("/forgot-username")
+def api_forgot_username(data: ForgotIn):
+    request_username_reminder(data.email)
+    return {"ok": True, "message": "If that email has an account, your username was sent."}
+
+
 @router.get("/me")
 def api_me(request: Request):
     user = current_user(request)
@@ -1443,6 +1574,7 @@ LOGIN_HTML = _page("Log in", """
   <label>Email</label><input id="em" type="email" autocomplete="email"/>
   <label>Password</label><input id="pw" type="password" autocomplete="current-password"/>
   <div style="margin-top:1rem"><button id="go" style="width:100%">Log in</button></div>
+  <p style="margin-top:0.8rem;font-size:0.85rem;color:var(--muted)"><a href="/forgot" style="color:var(--accent)">Forgot password?</a> &middot; <a href="/forgot#username" style="color:var(--accent)">Forgot username?</a></p>
   <p style="margin-top:0.8rem;font-size:0.85rem;color:var(--muted)">New here?
   <a href="/signup" style="color:var(--accent)">Create an account</a></p>
 </div>
@@ -1762,9 +1894,70 @@ def page_signup():
     return SIGNUP_HTML
 
 
+FORGOT_HTML = _page("Forgot password", """
+<h1>Forgot your password or username?</h1>
+<div class="card" id="cfgwarn" style="display:none">Email recovery isn't switched on yet. Please contact support@mingleandtingle.com and we'll help you get back in.</div>
+<h2 id="password">Forgot password</h2>
+<div class="card">
+  <div class="err" id="perr"></div><div class="ok" id="pok"></div>
+  <label>Email</label><input id="fem" type="email" autocomplete="email"/>
+  <div style="margin-top:0.8rem"><button id="sendcode">Send reset code</button></div>
+  <div id="resetbox" style="display:none;margin-top:1rem">
+    <label>Reset code (from your email)</label><input id="fcode" type="text" inputmode="numeric" maxlength="6"/>
+    <label>New password (8+ characters)</label><input id="fnpw" type="password" autocomplete="new-password"/>
+    <div style="margin-top:0.8rem"><button id="doreset">Reset password</button></div>
+  </div>
+</div>
+<h2 id="username">Forgot username</h2>
+<div class="card">
+  <p style="font-size:0.9rem;color:var(--muted)">You log in with your email address. Enter it and we'll email you the display name on your account.</p>
+  <div class="err" id="uerr"></div><div class="ok" id="uok"></div>
+  <label>Email</label><input id="uem" type="email" autocomplete="email"/>
+  <div style="margin-top:0.8rem"><button id="senduser">Send my username</button></div>
+</div>
+<p style="font-size:0.85rem;color:var(--muted)">Back to <a href="/login" style="color:var(--accent)">Log in</a></p>
+<script>
+(async () => {
+  const st = await (await fetch("/api/v2/email-status")).json();
+  if (!st.email_configured) { cfgwarn.style.display = "block"; }
+})();
+sendcode.onclick = async () => {
+  perr.textContent = ""; pok.textContent = "";
+  const r = await fetch("/api/v2/forgot-password", { method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: fem.value.trim() }) });
+  const d = await r.json();
+  pok.textContent = d.message || "If that email has an account, a reset code was sent.";
+  resetbox.style.display = "block";
+};
+doreset.onclick = async () => {
+  perr.textContent = ""; pok.textContent = "";
+  const r = await fetch("/api/v2/reset-password", { method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ email: fem.value.trim(), code: fcode.value.trim(), new_password: fnpw.value }) });
+  const d = await r.json();
+  if (!r.ok) { perr.textContent = (typeof d.detail === "string") ? d.detail : "Something went wrong."; return; }
+  pok.textContent = "Password reset. You can log in now.";
+  setTimeout(() => location.href = "/login", 1500);
+};
+senduser.onclick = async () => {
+  uerr.textContent = ""; uok.textContent = "";
+  const r = await fetch("/api/v2/forgot-username", { method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: uem.value.trim() }) });
+  const d = await r.json();
+  uok.textContent = d.message || "If that email has an account, your username was sent.";
+};
+</script>
+""", nav=False)
+
+
 @page_router.get("/login", response_class=HTMLResponse)
 def page_login():
     return LOGIN_HTML
+
+
+@page_router.get("/forgot", response_class=HTMLResponse)
+def page_forgot():
+    return FORGOT_HTML
 
 
 @page_router.get("/members", response_class=HTMLResponse)
