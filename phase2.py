@@ -1422,8 +1422,15 @@ document.getElementById("go").onclick = async () => {
     password: pw.value, birthdate: bdy.value + "-" + bdm.value + "-" + bdd.value };
   const r = await fetch("/api/v2/signup", { method:"POST",
     headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
-  const d = await r.json();
-  if (!r.ok) { err.textContent = d.detail || "Something went wrong."; return; }
+  let d = {};
+  try { d = await r.json(); }
+  catch { err.textContent = "The site is updating right now - please wait a few seconds and try again."; return; }
+  if (!r.ok) {
+    if ((d.detail || "").includes("already exists")) {
+      err.innerHTML = 'You already have an account. Please <a href="/login" style="color:var(--accent)">log in</a> instead.';
+    } else { err.textContent = d.detail || "Something went wrong."; }
+    return;
+  }
   location.href = "/account";
 };
 </script>
@@ -1445,7 +1452,9 @@ document.getElementById("go").onclick = async () => {
   const r = await fetch("/api/v2/login", { method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ email: em.value.trim(), password: pw.value }) });
-  const d = await r.json();
+  let d = {};
+  try { d = await r.json(); }
+  catch { err.textContent = "The site is updating right now - please wait a few seconds and try again."; return; }
   if (!r.ok) { err.textContent = d.detail || "Something went wrong."; return; }
   location.href = "/members";
 };
