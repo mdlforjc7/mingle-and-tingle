@@ -1607,6 +1607,8 @@ ACCOUNT_HTML = _page("Account", """
 <h1>Your account</h1>
 <div class="card" id="sub"></div>
 <div class="card" id="cred"></div>
+<h2>Buy message credits</h2>
+<div class="card" id="pkgs"></div>
 <h2>Profile</h2>
 <div class="card">
   <div class="err" id="perr"></div><div class="ok" id="pok"></div>
@@ -1646,6 +1648,18 @@ async function load() {
     `<br/><b>Card on file:</b> ${s.card_on_file ? "Yes" : "Not yet (billing connects soon)"}` +
     `<div style="margin-top:0.6rem"><button id="bill" class="ghost">Manage billing</button></div>`;
   cred.innerHTML = `<b>Message credits:</b> ${ME.credits}`;
+  const billinfo = await (await fetch("/api/v2/billing")).json();
+  pkgs.innerHTML = (billinfo.packages || []).map(p =>
+    `<div style="display:flex;gap:0.6rem;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+      <span><b>${p.name}</b> &mdash; ${p.credits} messages &mdash; $${(p.price_cents/100).toFixed(2)} (${p.validity_days} days)</span>
+      <button data-pkg="${p.id}" class="ghost">Buy</button></div>`).join("") ||
+    '<span style="color:var(--muted)">No packages available right now.</span>';
+  pkgs.querySelectorAll("[data-pkg]").forEach(b => b.onclick = async () => {
+    const r = await fetch(`/api/v2/billing/packages/${b.dataset.pkg}/buy?processor=ccbill`, { method:"POST" });
+    const d = await r.json();
+    if (d.checkout_url) { location.href = d.checkout_url; return; }
+    alert(d.message || d.error || "Billing");
+  });
   bill.onclick = async () => {
     const r = await fetch("/api/v2/billing/subscribe?processor=ccbill", { method:"POST" });
     const d = await r.json();
