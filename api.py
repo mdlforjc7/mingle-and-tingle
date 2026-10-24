@@ -400,7 +400,9 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
 <div id="bg"></div>
 <header>
   <h1>Mingle and Tingle</h1>
-  <div style="display:flex;gap:0.5rem;align-items:center">
+  <div style="display:flex;gap:0.75rem;align-items:center">
+    <a href="/login" style="color:#c4a77d;font-weight:600;text-decoration:none;white-space:nowrap">Log in</a>
+    <a href="/signup" style="color:#c4a77d;font-weight:600;text-decoration:none;white-space:nowrap">Sign up</a>
     <select id="character"></select>
   </div>
 </header>
@@ -418,7 +420,7 @@ header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
   <input type="text" id="input" placeholder="Say something…" autocomplete="off" />
   <button id="send">Send</button>
 </footer>
-<div class="fineprint">All characters are fictional and 18 years of age or older. &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a></div>
+<div class="fineprint">All characters are fictional and 18 years of age or older. &middot; <a href="/login">Log in</a> &middot; <a href="/signup">Sign up</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a></div>
 <script>
 let sessionId = null;
 let characterId = null;
