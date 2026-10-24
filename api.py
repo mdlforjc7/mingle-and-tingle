@@ -365,7 +365,7 @@ input[type="text"] {
 }
 input:focus { border-color: var(--accent); }
 #bg { position: fixed; inset: 0; background-size: cover; background-position: center;
-  opacity: 0.22; pointer-events: none; z-index: 0; }
+  opacity: 0.55; pointer-events: none; z-index: 0; }
 header, .hint, #chat, footer, #charbar { position: relative; z-index: 1; }
 #charbar { width: 100%; max-width: 720px; padding: 0.25rem 1rem 0.75rem;
   display: flex; align-items: center; gap: 0.75rem; }
@@ -434,7 +434,7 @@ function setCharacterArt(id) {
   if (c.portrait) { p.src = c.portrait; p.alt = (c.name || "Character") + " portrait"; }
   document.getElementById("charname").textContent = c.name || "";
   document.getElementById("charrole").textContent = c.role || "";
-  if (c.background) document.getElementById("bg").style.backgroundImage = "url(" + c.background + ")";
+  document.getElementById("bg").style.backgroundImage = "url(/img/hero-couple.webp)";
 }
 
 const openings = {
