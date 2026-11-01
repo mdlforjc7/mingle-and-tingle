@@ -269,6 +269,22 @@ def init_db():
         )
         db.commit()
 
+        # One-time unban: if UNBAN_EMAIL is set, clear the banned /
+        # inactive flags for that account so its owner can log in
+        # again. Read only here; remove the variable from the
+        # dashboard after the account logs in. Inert when unset.
+        unban_email = os.environ.get("UNBAN_EMAIL", "").strip().lower()
+        if unban_email:
+            cur = db.execute(
+                "UPDATE users SET is_banned=0, is_active=1 WHERE email=?",
+                (unban_email,),
+            )
+            db.commit()
+            if cur.rowcount:
+                print(f"[phase2] UNBAN_EMAIL unbanned user {unban_email}")
+            else:
+                print(f"[phase2] UNBAN_EMAIL no user found for {unban_email}")
+
 
 def _now() -> int:
     return int(time.time())
